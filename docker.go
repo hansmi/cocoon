@@ -93,7 +93,7 @@ func (p *program) toDockerCommand(environ envMap) ([]string, error) {
 		"--workdir=" + p.workdir,
 
 		// TODO: Should there be a "--mount-tmpfs" flag?
-		"--tmpfs=/tmp",
+		"--tmpfs=/tmp:rw,exec",
 	}
 
 	args = append(args, p.mounts.toDockerFlags()...)
