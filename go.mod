@@ -7,7 +7,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	golang.org/x/exp v0.0.0-20240525044651-4c93da0ed11d
-	golang.org/x/sys v0.20.0
+	golang.org/x/sys v0.21.0
 	golang.org/x/term v0.20.0
 	gopkg.in/yaml.v3 v3.0.1
 )
