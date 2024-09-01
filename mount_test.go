@@ -116,3 +116,31 @@ func TestMountSet(t *testing.T) {
 		})
 	}
 }
+
+func TestMountSetClone(t *testing.T) {
+	orig := newMountSet()
+
+	first := orig.clone()
+
+	if got := first.toDockerFlags(); len(got) != 0 {
+		t.Errorf("Clone of empty set %#v is not empty: %#v", orig, got)
+	}
+
+	orig.set("/", mountReadOnly)
+	orig.set("/tmp", mountReadWrite)
+
+	if got := first.toDockerFlags(); len(got) != 0 {
+		t.Errorf("Clone was modified when it shouldn't: %#v", got)
+	}
+
+	want := []string{
+		"--mount=type=bind,src=/,dst=/,readonly",
+		"--mount=type=bind,src=/tmp,dst=/tmp",
+	}
+
+	for _, s := range []*mountSet{orig, orig.clone()} {
+		if diff := cmp.Diff(want, s.toDockerFlags()); diff != "" {
+			t.Errorf("Docker flags diff (-want +got):\n%s", diff)
+		}
+	}
+}

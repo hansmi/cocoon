@@ -66,7 +66,7 @@ func toDockerEnviron(environ envMap) (*dockerEnviron, error) {
 	return result, nil
 }
 
-func (p *program) toDockerCommand(environ envMap) ([]string, error) {
+func (p *program) toDockerCommand(environ envMap, mounts *mountSet) ([]string, error) {
 	dockerCli, err := exec.LookPath(p.dockerCliProgram)
 	if err != nil {
 		return nil, fmt.Errorf("unable to find Docker CLI: %w", err)
@@ -96,7 +96,7 @@ func (p *program) toDockerCommand(environ envMap) ([]string, error) {
 		"--tmpfs=/tmp:rw,exec",
 	}
 
-	args = append(args, p.mounts.toDockerFlags()...)
+	args = append(args, mounts.toDockerFlags()...)
 
 	if p.interactive {
 		args = append(args, "--interactive", "--tty")

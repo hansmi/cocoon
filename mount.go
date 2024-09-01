@@ -52,6 +52,12 @@ func (s *mountSet) String() string {
 	return fmt.Sprint(s.entries)
 }
 
+func (s *mountSet) clone() *mountSet {
+	result := newMountSet()
+	maps.Copy(result.entries, s.entries)
+	return result
+}
+
 func (s *mountSet) set(path string, mode mountMode) {
 	path = filepath.Clean(path)
 

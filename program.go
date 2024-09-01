@@ -97,11 +97,6 @@ func (p *program) detectDefaults() error {
 
 	p.mounts.set(workdir, mountReadWrite)
 
-	if sshAuthSock := os.Getenv("SSH_AUTH_SOCK"); sshAuthSock != "" {
-		p.mounts.set(sshAuthSock, mountReadOnly)
-		p.env = append(p.env, "SSH_AUTH_SOCK="+sshAuthSock)
-	}
-
 	return nil
 }
 
@@ -190,12 +185,21 @@ func (p *program) run() error {
 		baseEnv["debian_chroot"] = &p.containerName
 	}
 
+	mounts := p.mounts.clone()
+
+	if p.forwardSSHAgent {
+		if sshAuthSock := os.Getenv("SSH_AUTH_SOCK"); sshAuthSock != "" {
+			mounts.set(sshAuthSock, mountReadOnly)
+			baseEnv["SSH_AUTH_SOCK"] = &sshAuthSock
+		}
+	}
+
 	env, err := combineEnviron(baseEnv, p.envFiles, p.env)
 	if err != nil {
 		return err
 	}
 
-	args, err := p.toDockerCommand(env)
+	args, err := p.toDockerCommand(env, mounts)
 	if err != nil {
 		return err
 	}
