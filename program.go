@@ -21,7 +21,7 @@ func fileExists(path string) (bool, error) {
 		return err == nil, nil
 	}
 
-	return false, err
+	return false, fmt.Errorf("checking existence of %s: %w", path, err)
 }
 
 type program struct {
@@ -68,7 +68,7 @@ func applyDefaultMounts(s *mountSet) error {
 		filepath.Join(home, ".ssh"): mountReadWrite,
 	} {
 		if ok, err := fileExists(path); err != nil {
-			return fmt.Errorf("checking existence of %s: %w", path, err)
+			return err
 		} else if ok {
 			s.set(path, mode)
 		}
