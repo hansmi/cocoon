@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"log"
+	"os"
 
 	"github.com/alecthomas/kingpin/v2"
 )
@@ -18,6 +20,12 @@ func main() {
 		kingpin.Parse()
 
 		err = p.run()
+
+		var cmdErr *commandError
+
+		if errors.As(err, &cmdErr) {
+			os.Exit(cmdErr.status)
+		}
 	}
 
 	if err != nil {

@@ -3,15 +3,18 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"syscall"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/kballard/go-shellquote"
-	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
@@ -24,7 +27,26 @@ func fileExists(path string) (bool, error) {
 	return false, fmt.Errorf("checking existence of %s: %w", path, err)
 }
 
+func isTerminal(w io.Writer) bool {
+	if f, ok := w.(interface{ Fd() uintptr }); ok {
+		return term.IsTerminal(int(f.Fd()))
+	}
+
+	return false
+}
+
+type commandError struct {
+	status int
+}
+
+func (e *commandError) Error() string {
+	return fmt.Sprintf("command failed with status %d", e.status)
+}
+
 type program struct {
+	stdin            io.Reader
+	stdout           io.Writer
+	stderr           io.Writer
 	dockerCliProgram string
 	containerName    string
 	image            string
@@ -42,6 +64,9 @@ type program struct {
 
 func newProgram() *program {
 	return &program{
+		stdin:           os.Stdin,
+		stdout:          os.Stdout,
+		stderr:          os.Stderr,
 		mounts:          newMountSet(),
 		forwardSSHAgent: true,
 	}
@@ -89,7 +114,7 @@ func (p *program) detectDefaults() error {
 	p.group = strconv.Itoa(os.Getgid())
 	p.workdir = workdir
 	p.shell = "/bin/sh"
-	p.interactive = term.IsTerminal(int(os.Stdin.Fd()))
+	p.interactive = isTerminal(p.stdout)
 
 	if err := applyDefaultMounts(p.mounts); err != nil {
 		return nil
@@ -164,7 +189,7 @@ func (p *program) registerFlags(app *kingpin.Application) {
 		StringVar(&p.shell)
 
 	app.Flag("interactive",
-		`Allocate a pseudo-TTY for the container and enable interactive I/O. Defaults to enabled if standard input is a TTY.`).
+		`Allocate a pseudo-TTY for the container and enable interactive I/O. Defaults to enabled if standard output is a TTY.`).
 		Envar("COCOON_INTERACTIVE").
 		BoolVar(&p.interactive)
 
@@ -208,8 +233,23 @@ func (p *program) run() error {
 		log.Printf("Container command: %s", shellquote.Join(args...))
 	}
 
-	if err := unix.Exec(args[0], args, os.Environ()); err != nil {
-		return fmt.Errorf("launching container program: %w", err)
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdin = p.stdin
+	cmd.Stdout = p.stdout
+	cmd.Stderr = p.stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:    true,
+		Foreground: isTerminal(p.stdout),
+	}
+
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+
+		if errors.As(err, &exitErr) && !slices.Contains(dockerExitCodes, exitErr.ExitCode()) {
+			return &commandError{status: exitErr.ExitCode()}
+		}
+
+		return fmt.Errorf("container runtime: %w", err)
 	}
 
 	return nil

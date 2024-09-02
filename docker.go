@@ -14,6 +14,19 @@ import (
 
 var errDockerEnvironNewline = errors.New("newline characters not supported in Docker environment variables")
 
+// Exit codes from Docker itself.
+//
+// https://docs.docker.com/engine/containers/run/#exit-status
+// https://tldp.org/LDP/abs/html/exitcodes.html
+var dockerExitCodes = []int{
+	// Docker client failed.
+	125,
+	// Container command can't be invoked.
+	126,
+	// Container command can't be found.
+	127,
+}
+
 type dockerEnviron struct {
 	file *os.File
 }
