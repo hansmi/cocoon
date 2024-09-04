@@ -3,13 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"os/exec"
 	"sort"
 	"strings"
 
 	"golang.org/x/exp/maps"
-	"golang.org/x/sys/unix"
 )
 
 var errDockerEnvironNewline = errors.New("newline characters not supported in Docker environment variables")
@@ -27,23 +26,7 @@ var dockerExitCodes = []int{
 	127,
 }
 
-type dockerEnviron struct {
-	file *os.File
-}
-
-func newDockerEnviron() (*dockerEnviron, error) {
-	// Create a temporary file without name.
-	fd, err := unix.Open(os.TempDir(), unix.O_TMPFILE|unix.O_RDWR|unix.O_CLOEXEC, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("creating temporary file: %w", err)
-	}
-
-	return &dockerEnviron{
-		file: os.NewFile(uintptr(fd), ""),
-	}, nil
-}
-
-func (e *dockerEnviron) add(variable string, value *string) error {
+func writeDockerEnvironVariable(w io.Writer, variable string, value *string) error {
 	if value != nil && strings.ContainsAny(*value, "\r\n") {
 		return errDockerEnvironNewline
 	}
@@ -52,34 +35,29 @@ func (e *dockerEnviron) add(variable string, value *string) error {
 
 	if value == nil {
 		// Pass-through variable
-		_, err = fmt.Fprintf(e.file, "%s\n", variable)
+		_, err = fmt.Fprintf(w, "%s\n", variable)
 	} else {
-		_, err = fmt.Fprintf(e.file, "%s=%s\n", variable, *value)
+		_, err = fmt.Fprintf(w, "%s=%s\n", variable, *value)
 	}
 
 	return err
 }
 
-func toDockerEnviron(environ envMap) (*dockerEnviron, error) {
-	result, err := newDockerEnviron()
-	if err != nil {
-		return nil, err
-	}
-
+func writeDockerEnviron(w io.Writer, environ envMap) error {
 	variables := maps.Keys(environ)
 
 	sort.Strings(variables)
 
 	for _, variable := range variables {
-		if err := result.add(variable, environ[variable]); err != nil {
-			return nil, fmt.Errorf("%s: %w", variable, err)
+		if err := writeDockerEnvironVariable(w, variable, environ[variable]); err != nil {
+			return fmt.Errorf("%s: %w", variable, err)
 		}
 	}
 
-	return result, nil
+	return nil
 }
 
-func (p *program) toDockerCommand(environ envMap, mounts *mountSet) ([]string, error) {
+func (p *program) toDockerCommand(envFile string, mounts *mountSet) (_ []string, err error) {
 	dockerCli, err := exec.LookPath(p.dockerCliProgram)
 	if err != nil {
 		return nil, fmt.Errorf("unable to find Docker CLI: %w", err)
@@ -115,17 +93,8 @@ func (p *program) toDockerCommand(environ envMap, mounts *mountSet) ([]string, e
 		args = append(args, "--interactive", "--tty")
 	}
 
-	if len(environ) > 0 {
-		env, err := toDockerEnviron(environ)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := clearCloseOnExec(env.file.Fd()); err != nil {
-			return nil, err
-		}
-
-		args = append(args, fmt.Sprintf("--env-file=/dev/fd/%d", env.file.Fd()))
+	if envFile != "" {
+		args = append(args, fmt.Sprintf("--env-file=%s", envFile))
 	}
 
 	args = append(args, p.image)

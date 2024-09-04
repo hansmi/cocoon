@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -201,7 +202,69 @@ func (p *program) registerFlags(app *kingpin.Application) {
 		StringsVar(&p.args)
 }
 
-func (p *program) run() error {
+type runtime struct {
+	baseDir string
+}
+
+func (r *runtime) cleanup() error {
+	var err error
+
+	if r.baseDir != "" {
+		err = errors.Join(err, os.RemoveAll(r.baseDir))
+	}
+
+	return nil
+}
+
+func (r *runtime) ensureBaseDir() (string, error) {
+	if r.baseDir == "" {
+		path, err := os.MkdirTemp("", "tmp-cocoon-*")
+		if err != nil {
+			return "", err
+		}
+
+		r.baseDir = path
+	}
+
+	return r.baseDir, nil
+}
+
+func (r *runtime) createFile(pattern string) (*os.File, error) {
+	baseDir, err := r.ensureBaseDir()
+	if err != nil {
+		return nil, err
+	}
+
+	return os.CreateTemp(baseDir, pattern)
+}
+
+func (r *runtime) createDir(pattern string) (string, error) {
+	baseDir, err := r.ensureBaseDir()
+	if err != nil {
+		return "", err
+	}
+
+	return os.MkdirTemp(baseDir, pattern)
+}
+
+func createTempEnvFile(r *runtime, environ envMap) (_ string, err error) {
+	if len(environ) == 0 {
+		return "", nil
+	}
+
+	f, err := r.createFile("env")
+	defer func() {
+		err = errors.Join(err, f.Close())
+	}()
+
+	if err := writeDockerEnviron(f, environ); err != nil {
+		return "", fmt.Errorf("writing environment to %q: %w", f.Name(), err)
+	}
+
+	return f.Name(), nil
+}
+
+func (p *program) run() (err error) {
 	baseEnv := envMap{
 		"HOME": nil,
 	}
@@ -224,7 +287,20 @@ func (p *program) run() error {
 		return err
 	}
 
-	args, err := p.toDockerCommand(env, mounts)
+	r := &runtime{}
+
+	defer func() {
+		if cleanupErr := r.cleanup(); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("cleanup: %w", cleanupErr))
+		}
+	}()
+
+	envFile, err := createTempEnvFile(r, env)
+	if err != nil {
+		return err
+	}
+
+	args, err := p.toDockerCommand(envFile, mounts)
 	if err != nil {
 		return err
 	}

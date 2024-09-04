@@ -1,8 +1,7 @@
 package main
 
 import (
-	"io"
-	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -10,7 +9,7 @@ import (
 	"github.com/hansmi/cocoon/internal/ref"
 )
 
-func TestToDockerEnviron(t *testing.T) {
+func TestWriteDockerEnviron(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		env     envMap
@@ -42,29 +41,16 @@ func TestToDockerEnviron(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := toDockerEnviron(tc.env)
+			var buf strings.Builder
+
+			err := writeDockerEnviron(&buf, tc.env)
 
 			if diff := cmp.Diff(tc.wantErr, err, cmpopts.EquateErrors()); diff != "" {
 				t.Errorf("toDockerEnviron() error diff (-want +got):\n%s", diff)
 			}
 
 			if err == nil {
-				t.Cleanup(func() {
-					if err := got.file.Close(); err != nil {
-						t.Errorf("Closing environment file failed: %v", err)
-					}
-				})
-
-				if _, err := got.file.Seek(0, os.SEEK_SET); err != nil {
-					t.Errorf("Seek() failed: %v", err)
-				}
-
-				fileContent, err := io.ReadAll(got.file)
-				if err != nil {
-					t.Errorf("Reading environment file failed: %v", err)
-				}
-
-				if diff := cmp.Diff(tc.want, string(fileContent), cmpopts.EquateEmpty()); diff != "" {
+				if diff := cmp.Diff(tc.want, buf.String(), cmpopts.EquateEmpty()); diff != "" {
 					t.Errorf("Environment file diff (-want +got):\n%s", diff)
 				}
 			}
