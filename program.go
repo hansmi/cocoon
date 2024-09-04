@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/kballard/go-shellquote"
@@ -45,22 +46,28 @@ func (e *commandError) Error() string {
 }
 
 type program struct {
-	stdin            io.Reader
-	stdout           io.Writer
-	stderr           io.Writer
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
+
 	dockerCliProgram string
-	containerName    string
-	image            string
-	user             string
-	group            string
-	mounts           *mountSet
-	workdir          string
-	envFiles         []string
-	env              []string
-	shell            string
-	args             []string
-	interactive      bool
-	forwardSSHAgent  bool
+
+	xdgDBusProxyProgram      string
+	xdgDBusProxyReadyTimeout time.Duration
+
+	containerName   string
+	image           string
+	user            string
+	group           string
+	mounts          *mountSet
+	workdir         string
+	envFiles        []string
+	env             []string
+	shell           string
+	args            []string
+	interactive     bool
+	forwardSSHAgent bool
+	forwardDBus     bool
 }
 
 func newProgram() *program {
@@ -134,6 +141,16 @@ func (p *program) registerFlags(app *kingpin.Application) {
 		Default("docker").
 		StringVar(&p.dockerCliProgram)
 
+	app.Flag("xdg-dbus-proxy-program", "Name of xdg-dbus-proxy program or an absolute path.").
+		Envar("COCOON_XDG_DBUS_PROXY_PROGRAM").
+		Default("xdg-dbus-proxy").
+		StringVar(&p.xdgDBusProxyProgram)
+
+	app.Flag("xdg-dbus-proxy-ready-timeout", "Amount of time to wait for xdg-dbus-proxy to become ready.").
+		Hidden().
+		Default("10s").
+		DurationVar(&p.xdgDBusProxyReadyTimeout)
+
 	app.Flag("container-name", "Container name. The default value includes the user ID, directory name and PID.").
 		Envar("COCOON_CONTAINER_NAME").
 		Default(p.containerName).
@@ -197,6 +214,10 @@ func (p *program) registerFlags(app *kingpin.Application) {
 	app.Flag("forward-ssh-agent", "Expose local SSH agent to container. Enabled by default.").
 		Envar("COCOON_FORWARD_SSH_AGENT").
 		BoolVar(&p.forwardSSHAgent)
+
+	app.Flag("forward-dbus", "Expose local D-Bus container.").
+		Envar("COCOON_FORWARD_DBUS").
+		BoolVar(&p.forwardDBus)
 
 	app.Arg("command", "Command and its arguments. If omitted a shell is started.").
 		StringsVar(&p.args)
@@ -264,7 +285,18 @@ func createTempEnvFile(r *runtime, environ envMap) (_ string, err error) {
 	return f.Name(), nil
 }
 
-func (p *program) run() (err error) {
+func (p *program) run(ctx context.Context) (err error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	r := &runtime{}
+
+	defer func() {
+		if cleanupErr := r.cleanup(); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("cleanup: %w", cleanupErr))
+		}
+	}()
+
 	baseEnv := envMap{
 		"HOME": nil,
 	}
@@ -282,18 +314,26 @@ func (p *program) run() (err error) {
 		}
 	}
 
+	if p.forwardDBus {
+		dbusSocket, dbusCleanup, err := p.startDBusProxy(ctx, r)
+		if err != nil {
+			return fmt.Errorf("D-Bus: %w", err)
+		}
+
+		defer func() {
+			if dbusErr := dbusCleanup(); dbusErr != nil {
+				err = errors.Join(err, fmt.Errorf("D-Bus proxy: %w", dbusErr))
+			}
+		}()
+
+		mounts.set(dbusSocket, mountReadOnly)
+		baseEnv[dbusSessionBusAddressEnv] = &dbusSocket
+	}
+
 	env, err := combineEnviron(baseEnv, p.envFiles, p.env)
 	if err != nil {
 		return err
 	}
-
-	r := &runtime{}
-
-	defer func() {
-		if cleanupErr := r.cleanup(); cleanupErr != nil {
-			err = errors.Join(err, fmt.Errorf("cleanup: %w", cleanupErr))
-		}
-	}()
 
 	envFile, err := createTempEnvFile(r, env)
 	if err != nil {

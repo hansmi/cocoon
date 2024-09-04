@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"os"
@@ -19,7 +20,7 @@ func main() {
 		p.registerFlags(kingpin.CommandLine)
 		kingpin.Parse()
 
-		err = p.run()
+		err = p.run(context.Background())
 
 		var cmdErr *commandError
 
