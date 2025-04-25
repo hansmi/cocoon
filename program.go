@@ -68,6 +68,7 @@ type program struct {
 	interactive     bool
 	forwardSSHAgent bool
 	forwardDBus     bool
+	forwardLocale   bool
 }
 
 func newProgram() *program {
@@ -219,6 +220,10 @@ func (p *program) registerFlags(app *kingpin.Application) {
 		Envar("COCOON_FORWARD_DBUS").
 		BoolVar(&p.forwardDBus)
 
+	app.Flag("forward-locale", "Set LC_* environment variables in container.").
+		Envar("COCOON_FORWARD_LOCALE").
+		BoolVar(&p.forwardLocale)
+
 	app.Arg("command", "Command and its arguments. If omitted a shell is started.").
 		StringsVar(&p.args)
 }
@@ -328,6 +333,12 @@ func (p *program) run(ctx context.Context) (err error) {
 
 		mounts.set(dbusSocket, mountReadOnly)
 		baseEnv[dbusSessionBusAddressEnv] = &dbusSocket
+	}
+
+	if p.forwardLocale {
+		for _, i := range localeEnvVariables {
+			baseEnv[i] = nil
+		}
 	}
 
 	env, err := combineEnviron(baseEnv, p.envFiles, p.env)
