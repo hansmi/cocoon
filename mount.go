@@ -3,12 +3,12 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
-	"golang.org/x/exp/maps"
 )
 
 //go:generate stringer -type=mountMode -linecomment -output=mount_string.go
@@ -29,17 +29,13 @@ func countSeparator(s string) int {
 	return strings.Count(s, string(filepath.Separator))
 }
 
-// sortPaths reorders a slice such that paths with fewer parts appear earlier.
-func sortPaths(paths []string) {
-	slices.SortFunc(paths, func(a, b string) int {
-		ac, bc := countSeparator(a), countSeparator(b)
-
-		if ac == bc {
-			return cmp.Compare(a, b)
-		}
-
+// comparePaths moves the paths with fewer parts appear earlier.
+func comparePaths(a, b string) int {
+	if ac, bc := countSeparator(a), countSeparator(b); ac != bc {
 		return cmp.Compare(ac, bc)
-	})
+	}
+
+	return cmp.Compare(a, b)
 }
 
 func newMountSet() *mountSet {
@@ -67,13 +63,9 @@ func (s *mountSet) set(path string, mode mountMode) {
 }
 
 func (s *mountSet) toDockerFlags() []string {
-	paths := maps.Keys(s.entries)
-
-	sortPaths(paths)
-
 	var result []string
 
-	for _, path := range paths {
+	for _, path := range slices.SortedFunc(maps.Keys(s.entries), comparePaths) {
 		value := fmt.Sprintf("--mount=type=bind,src=%[1]s,dst=%[1]s", path)
 
 		if s.entries[path] != mountReadWrite {

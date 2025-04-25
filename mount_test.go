@@ -9,7 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-func TestSortPaths(t *testing.T) {
+func TestComparePaths(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		paths []string
@@ -56,10 +56,10 @@ func TestSortPaths(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			paths := slices.Clone(tc.paths)
 
-			sortPaths(paths)
+			slices.SortFunc(paths, comparePaths)
 
 			if diff := cmp.Diff(tc.want, paths, cmpopts.EquateEmpty()); diff != "" {
-				t.Errorf("sortPaths() diff (-want +got):\n%s", diff)
+				t.Errorf("comparePaths() diff (-want +got):\n%s", diff)
 			}
 		})
 	}

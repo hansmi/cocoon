@@ -4,11 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os/exec"
-	"sort"
+	"slices"
 	"strings"
-
-	"golang.org/x/exp/maps"
 )
 
 var errDockerEnvironNewline = errors.New("newline characters not supported in Docker environment variables")
@@ -44,11 +43,7 @@ func writeDockerEnvironVariable(w io.Writer, variable string, value *string) err
 }
 
 func writeDockerEnviron(w io.Writer, environ envMap) error {
-	variables := maps.Keys(environ)
-
-	sort.Strings(variables)
-
-	for _, variable := range variables {
+	for _, variable := range slices.Sorted(maps.Keys(environ)) {
 		if err := writeDockerEnvironVariable(w, variable, environ[variable]); err != nil {
 			return fmt.Errorf("%s: %w", variable, err)
 		}
