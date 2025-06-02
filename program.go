@@ -29,8 +29,8 @@ func fileExists(path string) (bool, error) {
 	return false, fmt.Errorf("checking existence of %s: %w", path, err)
 }
 
-func isTerminal(w io.Writer) bool {
-	if f, ok := w.(interface{ Fd() uintptr }); ok {
+func isTerminal(f any) bool {
+	if f, ok := f.(interface{ Fd() uintptr }); ok {
 		return term.IsTerminal(int(f.Fd()))
 	}
 
@@ -123,7 +123,7 @@ func (p *program) detectDefaults() error {
 	p.group = strconv.Itoa(os.Getgid())
 	p.workdir = workdir
 	p.shell = "/bin/sh"
-	p.interactive = isTerminal(p.stdout)
+	p.interactive = isTerminal(p.stdin) && isTerminal(p.stdout) && isTerminal(p.stderr)
 
 	if err := applyDefaultMounts(p.mounts); err != nil {
 		return nil
@@ -366,7 +366,7 @@ func (p *program) run(ctx context.Context) (err error) {
 	cmd.Stderr = p.stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid:    true,
-		Foreground: isTerminal(p.stdout),
+		Foreground: isTerminal(p.stdin),
 	}
 
 	if err := cmd.Run(); err != nil {

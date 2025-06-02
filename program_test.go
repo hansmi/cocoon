@@ -1,9 +1,11 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/hansmi/cocoon/internal/testutil"
@@ -55,5 +57,48 @@ func TestProgramDetectDefaults(t *testing.T) {
 
 	if err := p.detectDefaults(); err != nil {
 		t.Errorf("detectDefaults() failed: %v", err)
+	}
+}
+
+func TestIsTerminal(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		f    any
+		want bool
+	}{
+		{
+			name: "nil",
+		},
+		{
+			name: "dev-null",
+			f: func() *os.File {
+				f, err := os.Open(os.DevNull)
+				if err != nil {
+					t.Error(err)
+				}
+				t.Cleanup(func() { f.Close() })
+				return f
+			}(),
+		},
+		{
+			name: "pty",
+			f: func() *os.File {
+				ptmx, _, err := pty.Open()
+				if err != nil {
+					t.Error(err)
+				}
+				t.Cleanup(func() { ptmx.Close() })
+				return ptmx
+			}(),
+			want: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isTerminal(tc.f)
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("isTerminal() diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
