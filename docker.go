@@ -72,11 +72,12 @@ func (p *program) toDockerCommand(envFile string, mounts *mountSet) (_ []string,
 		"--name=" + p.containerName,
 		"--network=host",
 		"--pid=host",
-		"--read-only",
 		"--rm",
 		"--user=" + p.user + ":" + p.group,
 		"--uts=host",
 		"--workdir=" + p.workdir,
+
+		fmt.Sprintf("--read-only=%t", p.readOnly),
 
 		// TODO: Should there be a "--mount-tmpfs" flag?
 		"--tmpfs=/tmp:rw,exec",

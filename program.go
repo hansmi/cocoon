@@ -59,6 +59,7 @@ type program struct {
 	image           string
 	user            string
 	group           string
+	readOnly        bool
 	mounts          *mountSet
 	workdir         string
 	envFiles        []string
@@ -73,11 +74,10 @@ type program struct {
 
 func newProgram() *program {
 	return &program{
-		stdin:           os.Stdin,
-		stdout:          os.Stdout,
-		stderr:          os.Stderr,
-		mounts:          newMountSet(),
-		forwardSSHAgent: true,
+		stdin:  os.Stdin,
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+		mounts: newMountSet(),
 	}
 }
 
@@ -172,6 +172,10 @@ func (p *program) registerFlags(app *kingpin.Application) {
 		Default(p.group).
 		StringVar(&p.group)
 
+	app.Flag("read-only", "Mount container root filesystem read-only.").
+		Default("true").
+		BoolVar(&p.readOnly)
+
 	mountSetVar(
 		app.Flag("mount",
 			fmt.Sprintf(`Mount a path into the container in read-only mode. Multiple paths can be specified by passing the flag more than once or by separating paths using %q.`, filepath.ListSeparator)).
@@ -214,6 +218,7 @@ func (p *program) registerFlags(app *kingpin.Application) {
 
 	app.Flag("forward-ssh-agent", "Expose local SSH agent to container. Enabled by default.").
 		Envar("COCOON_FORWARD_SSH_AGENT").
+		Default("true").
 		BoolVar(&p.forwardSSHAgent)
 
 	app.Flag("forward-dbus", "Expose local D-Bus container.").
